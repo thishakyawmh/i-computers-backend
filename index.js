@@ -3,9 +3,12 @@ import mongoose from "mongoose"
 import userRouter from "./routes/userRouter.js"
 import jwt from "jsonwebtoken"
 import productRouter from "./routes/productRouter.js"
+import cors from 'cors';
+import dotenv from "dotenv"
 
 
-const mongoURL = "mongodb+srv://admin:1234@cluster0.iaagaku.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+dotenv.config()
+const mongoURL = process.env.MONGO_URL
 
 mongoose.connect(mongoURL).then(
     ()=>{
@@ -14,6 +17,9 @@ mongoose.connect(mongoURL).then(
 )
 
 const app = express()
+app.use(cors());
+
+
 
 app.use(express.json())
 
@@ -25,7 +31,7 @@ app.use((req, res, next) =>{
 
             // console.log(token)
 
-            jwt.verify(token, "secretKey69$2025",
+            jwt.verify(token, JWT_SECRET,
                 (error, content) =>{
                     
                     if (content == null){
@@ -47,9 +53,9 @@ app.use((req, res, next) =>{
     }
    )
 
-app.use("/users",userRouter)
+app.use("/api/users",userRouter)
 
-app.use("/products", productRouter)
+app.use("/api/products", productRouter)
 
 
 app.listen(3000, 
