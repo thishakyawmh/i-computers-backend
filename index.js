@@ -31,7 +31,7 @@ app.use((req, res, next) =>{
 
             // console.log(token)
 
-            jwt.verify(token, JWT_SECRET,
+            jwt.verify(token, process.env.JWT_SECRET,
                 (error, content) =>{
                     
                     if (content == null){

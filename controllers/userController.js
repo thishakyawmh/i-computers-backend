@@ -44,13 +44,14 @@ export function loginUser(req, res) {
                     image: user.image
                 };
 
-                const token = jwt.sign(payload, JWT_SECRET, {
+                const token = jwt.sign(payload, process.env.JWT_SECRET, {
                     expiresIn: "150h"
                 });
 
                 res.json({
                     message: "Password is correct",
-                    token: token
+                    token: token,
+                    role: user.role
                 });
             } else {
                 res.status(401).json({ message: "Password is incorrect" });
