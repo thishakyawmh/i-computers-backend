@@ -36,7 +36,7 @@ app.use((req, res, next) =>{
                     
                     if (content == null){
                         console.log("Invalid Token")
-                        res.json(
+                        res.status(401).json(
                             {message: "Invalid Token"
                         })
 

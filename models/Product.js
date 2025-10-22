@@ -35,10 +35,17 @@ const productSchema = new mongoose.Schema(
             type : String,
             required : true
         },
+
+        model : {
+            type : String,
+            required : true,
+            default : "Standard"
+        },
+
         brand : {
             type : String,
             required : true,
-            default : "No brand"
+            default : "Generic"
         },
         stock : {
             type : Number,
