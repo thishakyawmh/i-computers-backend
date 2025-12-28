@@ -1,4 +1,5 @@
 import Order from "../models/Order.js";
+import Product from "../models/Product.js";
 
 export async function createOrder(req, res) {
     if (!req.user) {
@@ -31,6 +32,7 @@ export async function createOrder(req, res) {
                 res.status(404).json({
                     message: "Product with ID " + req.body.items[i].productID + " not found"
                 })
+                return;
             }
 
             items.push({
@@ -38,7 +40,7 @@ export async function createOrder(req, res) {
                 name: product.name,
                 price: product.price,
                 quantity: req.body.items[i].quantity,
-                image: product.image[0]
+                image: product.images?.[0] || ""
             })
 
             total = total + product.price * req.body.items[i].quantity
@@ -61,6 +63,7 @@ export async function createOrder(req, res) {
             address: req.body.address,
             total: total,
             items: items,
+            notes: req.body.notes || ""
         })
 
         await newOrder.save()
@@ -75,6 +78,35 @@ export async function createOrder(req, res) {
         console.log(error);
         res.status(500).json({
             message: "Error placing order",
+            error: error.message
+        });
+    }
+}
+
+function isAdmin(req) {
+    return req.user && req.user.role === "admin";
+}
+
+export async function getOrders(req, res) {
+    if (req.user == null) {
+        res.status(401).json({
+            message: "Unauthorized"
+        });
+        return;
+    }
+
+    try {
+        if (isAdmin(req)) {
+            const orders = await Order.find().sort({ date: -1 });
+            res.json(orders);
+        } else {
+            const orders = await Order.find({ email: req.user.email }).sort({ date: -1 });
+            res.json(orders);
+        }
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: "Error fetching orders",
             error: error.message
         });
     }
