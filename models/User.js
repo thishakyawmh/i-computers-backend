@@ -2,43 +2,43 @@ import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema(
     {
-        email : { 
-            type: String, 
-            required: true, 
-            unique: true 
+        email: {
+            type: String,
+            required: true,
+            unique: true
         },
 
-        firstName : {
-            type: String, 
-            required: true 
-        },
-
-        lastName : {
-            type: String, 
-            required: true 
-        },
-        password : {
-            type: String, 
+        firstName: {
+            type: String,
             required: true
         },
 
-        role : {
-            type : String,
-            default : "customer"
+        lastName: {
+            type: String,
+            required: true
+        },
+        password: {
+            type: String,
+            required: true
         },
 
-        isBlocked : {
-            type : Boolean,
-            default : false
+        role: {
+            type: String,
+            default: "customer"
         },
-        isEmailVerified : {
-            type : Boolean,
-            default : false
+
+        isBlocked: {
+            type: Boolean,
+            default: false
         },
-        image : {
-            type : String,
-            rquired : true,
-            default : "/defualt.jpg"
+        isEmailVerified: {
+            type: Boolean,
+            default: false
+        },
+        image: {
+            type: String,
+            required: true,
+            default: "/default.jpg"
         }
     }
 )
@@ -46,4 +46,4 @@ const userSchema = new mongoose.Schema(
 const User = mongoose.model("User", userSchema)
 
 export default User;
-    
+
