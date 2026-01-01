@@ -111,3 +111,31 @@ export async function getOrders(req, res) {
         });
     }
 }
+
+export async function updateOrder(req, res) {
+    if (!isAdmin(req)) {
+        res.status(401).json({
+            message: "Unauthorized"
+        });
+        return;
+    }
+
+    try {
+        const orderId = req.params.orderID
+        const status = req.body.status
+        const notes = req.body.notes
+
+        await Order.updateOne(
+            { orderID: orderId },
+            { status: status, notes: notes });
+        res.json({
+            message: "Order updated successfully"
+        });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({
+            message: "Error updating order",
+            error: error.message
+        });
+    }
+}
