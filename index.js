@@ -6,7 +6,7 @@ import productRouter from "./routes/productRouter.js"
 import cors from 'cors';
 import dotenv from "dotenv"
 import OrderRouter from "./routes/orderRouter.js"
-
+import reviewRouter from "./routes/reviewRouter.js"
 
 dotenv.config()
 const mongoURL = process.env.MONGO_URL
@@ -63,6 +63,7 @@ app.use("/api/users", userRouter)
 app.use("/api/products", productRouter)
 
 app.use("/api/orders", OrderRouter)
+app.use("/api/reviews", reviewRouter)
 
 
 app.listen(3000,
