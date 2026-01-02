@@ -24,7 +24,8 @@ const userSchema = new mongoose.Schema(
 
         role: {
             type: String,
-            default: "customer"
+            default: "customer",
+            enum: ["customer", "admin"]
         },
 
         isBlocked: {
@@ -37,8 +38,15 @@ const userSchema = new mongoose.Schema(
         },
         image: {
             type: String,
-            required: true,
-            default: "/default.jpg"
+            required: false,
+            default: null
+        },
+        profileImage: {
+            type: String,
+            default: null
+        },
+        otp: {
+            type: Number
         }
     }
 )
