@@ -1,33 +1,38 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
     {
         email: {
             type: String,
             required: true,
-            unique: true
+            unique: true,
+            lowercase: true,
+            trim: true,
+            maxlength: 254
         },
-
         firstName: {
             type: String,
-            required: true
+            required: true,
+            trim: true,
+            maxlength: 100
         },
-
         lastName: {
             type: String,
-            required: true
+            required: true,
+            trim: true,
+            maxlength: 100
         },
         password: {
             type: String,
-            required: true
+            required: true,
+            minlength: 60,
+            select: false
         },
-
         role: {
             type: String,
             default: "customer",
             enum: ["customer", "admin"]
         },
-
         isBlocked: {
             type: Boolean,
             default: false
@@ -38,20 +43,16 @@ const userSchema = new mongoose.Schema(
         },
         image: {
             type: String,
-            required: false,
             default: null
         },
         profileImage: {
             type: String,
             default: null
-        },
-        otp: {
-            type: Number
         }
-    }
-)
+    },
+    { timestamps: true }
+);
 
-const User = mongoose.model("User", userSchema)
+const User = mongoose.model("User", userSchema);
 
 export default User;
-
