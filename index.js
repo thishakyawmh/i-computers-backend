@@ -1,73 +1,79 @@
-import express from "express"
-import mongoose from "mongoose"
-import userRouter from "./routes/userRouter.js"
-import jwt from "jsonwebtoken"
-import productRouter from "./routes/productRouter.js"
-import cors from 'cors';
-import dotenv from "dotenv"
-import OrderRouter from "./routes/orderRouter.js"
-import reviewRouter from "./routes/reviewRouter.js"
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import dotenv from "dotenv";
 
-dotenv.config()
-const mongoURL = process.env.MONGO_URL
+import userRouter from "./routes/userRouter.js";
+import productRouter from "./routes/productRouter.js";
+import OrderRouter from "./routes/orderRouter.js";
+import reviewRouter from "./routes/reviewRouter.js";
+import { authenticateToken } from "./middleware/auth.js";
 
-mongoose.connect(mongoURL).then(
-    () => {
-        console.log("Connected to MongoDB Cluster")
-    }
-)
+dotenv.config();
 
-const app = express()
-app.use(cors());
+const PORT = Number(process.env.PORT) || 3000;
+const MONGO_URL = process.env.MONGO_URL;
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_ISSUER = process.env.JWT_ISSUER || "i-computers-api";
+
+if (!MONGO_URL) {
+    throw new Error("MONGO_URL must be configured");
+}
+if (!JWT_SECRET || JWT_SECRET.length < 32) {
+    throw new Error("JWT_SECRET must be configured with at least 32 characters");
+}
+
+const app = express();
+const allowedOrigins = (process.env.CORS_ORIGINS || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error("Origin is not allowed by CORS"));
+    },
+    credentials: true
+}));
 
 app.use((req, res, next) => {
     res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
     next();
 });
 
-app.use(express.json())
+app.use(express.json({ limit: "1mb" }));
 
-app.use((req, res, next) => {
+app.use(authenticateToken);
 
-    const authorizationHeader = req.header("Authorization")
-    if (authorizationHeader != null) {
-        const token = authorizationHeader.replace("Bearer ", "")
+app.use("/api/users", userRouter);
+app.use("/api/products", productRouter);
+app.use("/api/orders", OrderRouter);
+app.use("/api/reviews", reviewRouter);
 
-        // console.log(token)
+app.use((req, res) => {
+    res.status(404).json({ message: "Route not found" });
+});
 
-        jwt.verify(token, process.env.JWT_SECRET,
-            (error, content) => {
+app.use((error, req, res, next) => {
+    console.error("Unhandled API error:", error.message);
+    if (res.headersSent) return next(error);
+    return res.status(500).json({ message: "Internal server error" });
+});
 
-                if (content == null) {
-                    console.log("Invalid Token")
-                    res.status(401).json(
-                        {
-                            message: "Invalid Token"
-                        })
-
-                } else {
-                    console.log(content)
-                    req.user = content
-                    next()
-                }
-            }
-        )
-    } else {
-        next()
+async function startServer() {
+    try {
+        await mongoose.connect(MONGO_URL, { serverSelectionTimeoutMS: 10000 });
+        console.log("Connected to MongoDB");
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error("Failed to connect to MongoDB:", error.message);
+        process.exit(1);
     }
 }
-)
 
-app.use("/api/users", userRouter)
-
-app.use("/api/products", productRouter)
-
-app.use("/api/orders", OrderRouter)
-app.use("/api/reviews", reviewRouter)
-
-
-app.listen(3000,
-    () => {
-        console.log("Server is running on port 3000")
-    })
-
+startServer();
