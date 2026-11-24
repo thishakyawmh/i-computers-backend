@@ -136,16 +136,41 @@ export async function updateOrder(req, res) {
         return res.status(400).json({ message: "Invalid order status or notes" });
     }
 
+    const session = await mongoose.startSession();
     try {
-        const updated = await Order.findOneAndUpdate(
-            { orderID: req.params.orderID },
-            { $set: { status, ...(notes !== undefined ? { notes } : {}) } },
-            { new: true, runValidators: true }
-        );
-        if (!updated) return res.status(404).json({ message: "Order not found" });
-        return res.json({ message: "Order updated successfully", order: updated });
+        let updatedOrder = null;
+        await session.withTransaction(async () => {
+            const order = await Order.findOne({ orderID: req.params.orderID }).session(session);
+            if (!order) return;
+            if (order.status === "cancelled" && status !== "cancelled") {
+                const error = new Error("CANCELLED_ORDER_CANNOT_BE_REOPENED");
+                error.statusCode = 409;
+                throw error;
+            }
+
+            if (status === "cancelled" && order.status !== "cancelled") {
+                for (const item of order.items) {
+                    await Product.updateOne(
+                        { productID: item.productID },
+                        { $inc: { stock: item.quantity } },
+                        { session }
+                    );
+                }
+            }
+
+            order.status = status;
+            if (notes !== undefined) order.notes = notes;
+            await order.save({ session });
+            updatedOrder = order;
+        });
+
+        if (!updatedOrder) return res.status(404).json({ message: "Order not found" });
+        return res.json({ message: "Order updated successfully", order: updatedOrder });
     } catch (error) {
+        if (error.statusCode === 409) return res.status(409).json({ message: "A cancelled order cannot be reopened" });
         console.error("Order update failed:", error.message);
         return res.status(500).json({ message: "Unable to update order" });
+    } finally {
+        await session.endSession();
     }
 }
