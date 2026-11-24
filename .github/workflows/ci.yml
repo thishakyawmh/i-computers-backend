@@ -14,11 +14,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
+      - name: Install dependencies and regenerate lockfile
+        run: npm install --no-audit --no-fund
+      - name: Upload regenerated lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-package-lock
+          path: package-lock.json
+          if-no-files-found: error
       - name: Report dependency advisories
         run: |
           npm audit --json > npm-audit.json || true
           node -e 'const a=require("./npm-audit.json"); for (const [name,v] of Object.entries(a.vulnerabilities || {})) console.log(name + ": " + v.severity + " | range=" + v.range + " | fix=" + JSON.stringify(v.fixAvailable));'
+      - name: Enforce no high or critical dependency advisories
+        run: npm audit --audit-level=high
       - run: npm test
       - run: npm run check
