@@ -136,11 +136,22 @@ export async function getUser(req, res) {
 
 export async function googleLogin(req, res) {
     const { token } = req.body;
+    if (typeof token !== "string" || !token) {
+        return res.status(400).json({ message: "Google access token is required" });
+    }
+
     try {
         const googleRes = await axios.get(
-            `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${token}`
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            {
+                headers: { Authorization: `Bearer ${token}` },
+                timeout: 8000
+            }
         );
-        const { email, given_name, family_name, picture } = googleRes.data;
+        const { email, email_verified, given_name, family_name, picture } = googleRes.data;
+        if (typeof email !== "string" || email_verified !== true) {
+            return res.status(401).json({ message: "Google account email must be verified" });
+        }
         let user = await User.findOne({ email: email });
         if (user?.isBlocked) {
             return res.status(403).json({ message: "This account is blocked" });
