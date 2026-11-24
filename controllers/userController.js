@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import axios from "axios";
 import nodemailer from "nodemailer";
+import { randomInt, randomBytes } from "node:crypto";
 import Otp from '../models/Otp.js';
 dotenv.config();
 
@@ -31,37 +32,53 @@ const sanitizeUserImages = (user) => {
     if (userObj.profileImage && invalidPaths.some(path => userObj.profileImage.includes(path))) {
         userObj.profileImage = null;
     }
+    delete userObj.password;
     return userObj;
 };
 
 export async function createUser(req, res) {
     try {
-        const data = req.body;
-        const hashedPassword = bcrypt.hashSync(data.password, 10);
-        const user = new User({
-            email: data.email,
-            firstName: data.firstName,
-            lastName: data.lastName,
-            password: hashedPassword,
-        });
+        const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+        const firstName = typeof req.body.firstName === "string" ? req.body.firstName.trim() : "";
+        const lastName = typeof req.body.lastName === "string" ? req.body.lastName.trim() : "";
+        const password = req.body.password;
 
+        if (!email || !firstName || !lastName || typeof password !== "string" || password.length < 12) {
+            return res.status(400).json({ message: "Valid email, first name, last name, and a password of at least 12 characters are required" });
+        }
+
+        const existingUser = await User.findOne({ email }).select("_id");
+        if (existingUser) {
+            return res.status(409).json({ message: "An account with this email already exists" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 12);
+        const user = new User({ email, firstName, lastName, password: hashedPassword });
         await user.save();
-        res.json({ message: "User Created Successfully" });
+        return res.status(201).json({ message: "User created successfully" });
     } catch (error) {
-        res.status(500).json({ message: "Error creating user", error: error.message });
+        if (error?.code === 11000) {
+            return res.status(409).json({ message: "An account with this email already exists" });
+        }
+        return res.status(500).json({ message: "Error creating user" });
     }
 }
 
 export async function loginUser(req, res) {
     try {
-        const { email, password } = req.body;
+        const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+        const password = req.body.password;
 
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ message: "User Not Found" });
+        if (!email || typeof password !== "string" || !password) {
+            return res.status(400).json({ message: "Email and password are required" });
         }
 
-        const isPasswordCorrect = bcrypt.compareSync(password, user.password);
+        const user = await User.findOne({ email });
+        if (!user || user.isBlocked) {
+            return res.status(401).json({ message: "Invalid email or password" });
+        }
+
+        const isPasswordCorrect = await bcrypt.compare(password, user.password);
 
         if (isPasswordCorrect) {
             const sanitizedUser = sanitizeUserImages(user);
@@ -75,8 +92,10 @@ export async function loginUser(req, res) {
                 profileImage: sanitizedUser.profileImage || sanitizedUser.image
             };
 
-            const token = jwt.sign(payload, process.env.JWT_SECRET, {
-                expiresIn: "150h"
+            const token = jwt.sign(payload, JWT_SECRET, {
+                expiresIn: "24h",
+                issuer: "i-computers-api",
+                algorithm: "HS256"
             });
 
             res.json({
@@ -85,7 +104,7 @@ export async function loginUser(req, res) {
                 role: user.role
             });
         } else {
-            res.status(401).json({ message: "Password is incorrect" });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
     } catch (error) {
         res.status(500).json({ message: "Error logging in", error: error.message });
@@ -136,7 +155,7 @@ export async function googleLogin(req, res) {
                 image: picture,
                 role: "customer",
                 isEmailVerified: true,
-                password: Math.random().toString(36).slice(-10)
+                password: await bcrypt.hash(randomBytes(32).toString("hex"), 12)
             });
             await user.save();
         }
@@ -152,8 +171,8 @@ export async function googleLogin(req, res) {
                 profileImage: sanitizedUser.profileImage,
                 image: sanitizedUser.image
             },
-            process.env.JWT_SECRET,
-            { expiresIn: "24h" }
+            JWT_SECRET,
+            { expiresIn: "24h", issuer: "i-computers-api", algorithm: "HS256" }
         );
 
         res.json({
@@ -170,68 +189,86 @@ export async function googleLogin(req, res) {
 
 export async function sendOTP(req, res) {
     try {
-        const email = req.params.email;
-        const user = await User.findOne({ email });
+        const email = typeof req.params.email === "string" ? req.params.email.trim().toLowerCase() : "";
+        if (!email) return res.status(400).json({ message: "Email is required" });
 
+        const user = await User.findOne({ email });
         if (!user) {
-            return res.status(404).json({ message: "User Not Found" });
+            // Avoid exposing whether an account exists.
+            return res.json({ message: "If the account exists, a verification code will be sent" });
         }
 
-        await Otp.deleteMany({
-            email: email
-        });
+        const recentOtp = await Otp.findOne({ email });
+        if (recentOtp?.createdAt && Date.now() - recentOtp.createdAt.getTime() < 60_000) {
+            return res.status(429).json({ message: "Please wait before requesting another code" });
+        }
 
-        const otpCode = Math.floor(100000 + Math.random() * 900000);
-
+        await Otp.deleteMany({ email });
+        const otpCode = String(randomInt(100000, 1000000));
         const otp = new Otp({
-            email: email,
-            otp: otpCode
-        })
-
+            email,
+            otpHash: await bcrypt.hash(otpCode, 10),
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            attempts: 0
+        });
         await otp.save();
 
-        const message = {
-            from: process.env.EMAIL,
-            to: email,
-            subject: "OTP Verification",
-            text: `Your OTP is ${otpCode}`
-        };
+        try {
+            await transporter.sendMail({
+                from: process.env.EMAIL,
+                to: email,
+                subject: "OTP Verification",
+                text: `Your verification code is ${otpCode}. It expires in 10 minutes.`
+            });
+        } catch (mailError) {
+            await Otp.deleteMany({ email });
+            throw mailError;
+        }
 
-        transporter.sendMail(message, (error, info) => {
-            if (error) {
-                console.error(error);
-                return res.status(500).json({ message: "Error sending OTP", error: error.message });
-            }
-            res.json({ message: "OTP sent successfully" });
-        });
-
+        return res.json({ message: "If the account exists, a verification code will be sent" });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error sending OTP", error: error.message });
+        console.error("OTP delivery failed:", error.message);
+        return res.status(500).json({ message: "Unable to send verification code" });
     }
 }
 
 export async function validateOTAndUpdatePassword(req, res) {
     try {
-        const { email, otpCode, password } = req.body;
+        const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+        const otpCode = String(req.body.otpCode || "");
+        const password = req.body.password;
+
+        if (!email || !/^\\d{6}$/.test(otpCode) || typeof password !== "string" || password.length < 12) {
+            return res.status(400).json({ message: "A valid email, six-digit code, and password of at least 12 characters are required" });
+        }
+
         const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ message: "User Not Found" });
-        }
         const otp = await Otp.findOne({ email });
-        if (!otp) {
-            return res.status(404).json({ message: "OTP Not Found" });
+        if (!user || !otp || !otp.expiresAt || otp.expiresAt <= new Date()) {
+            if (otp) await Otp.deleteMany({ email });
+            return res.status(401).json({ message: "Invalid or expired verification code" });
         }
-        if (otp.otp !== otpCode) {
-            return res.status(401).json({ message: "Invalid OTP" });
+
+        if (otp.attempts >= 5) {
+            await Otp.deleteMany({ email });
+            return res.status(429).json({ message: "Too many attempts. Request a new code." });
         }
-        user.password = bcrypt.hashSync(password, 10);
+
+        const isValid = await bcrypt.compare(otpCode, otp.otpHash);
+        if (!isValid) {
+            otp.attempts += 1;
+            if (otp.attempts >= 5) await Otp.deleteMany({ email });
+            else await otp.save();
+            return res.status(401).json({ message: "Invalid or expired verification code" });
+        }
+
+        user.password = await bcrypt.hash(password, 12);
         await user.save();
         await Otp.deleteMany({ email });
-        res.json({ message: "Password updated successfully" });
+        return res.json({ message: "Password updated successfully" });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error updating password", error: error.message });
+        console.error("Password reset failed:", error.message);
+        return res.status(500).json({ message: "Unable to update password" });
     }
 }
 
@@ -253,11 +290,24 @@ export function updateUserByEmail(req, res) {
         return res.status(403).json({ message: "Forbidden" });
     }
 
-    const email = req.params.email;
-    User.updateOne({ email: email }, req.body).then(() => {
-        res.json({ message: "User updated successfully" });
-    }).catch((error) => {
-        res.status(500).json({ message: "Error updating user", error: error.message });
+    const email = String(req.params.email || "").trim().toLowerCase();
+    const allowedFields = ["firstName", "lastName", "email", "role", "isBlocked", "isEmailVerified", "image", "profileImage"];
+    const updates = {};
+    for (const field of allowedFields) {
+        if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+    if (req.body.password !== undefined) {
+        if (typeof req.body.password !== "string" || req.body.password.length < 12) {
+            return res.status(400).json({ message: "Password must be at least 12 characters long" });
+        }
+        updates.password = await bcrypt.hash(req.body.password, 12);
+    }
+
+    User.updateOne({ email }, { $set: updates }, { runValidators: true }).then((result) => {
+        if (result.matchedCount === 0) return res.status(404).json({ message: "User Not Found" });
+        return res.json({ message: "User updated successfully" });
+    }).catch(() => {
+        res.status(500).json({ message: "Error updating user" });
     });
 }
 
