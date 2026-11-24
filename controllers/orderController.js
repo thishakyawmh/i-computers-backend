@@ -10,13 +10,22 @@ export async function createOrder(req, res) {
 
     const rawItems = req.body.items;
     const address = typeof req.body.address === "string" ? req.body.address.trim() : "";
+    const recipientName = typeof req.body.recipientName === "string" ? req.body.recipientName.trim() : "";
+    const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : "";
     const notes = typeof req.body.notes === "string" ? req.body.notes.trim() : "";
 
     if (!Array.isArray(rawItems) || rawItems.length === 0 || rawItems.length > 50) {
         return res.status(400).json({ message: "An order must contain between 1 and 50 items" });
     }
-    if (!address || address.length > 1000 || notes.length > 1000) {
-        return res.status(400).json({ message: "A valid delivery address is required and notes must be under 1000 characters" });
+    if (
+        !address ||
+        address.length > 1000 ||
+        !recipientName ||
+        recipientName.length > 255 ||
+        !/^[+()\\d\\s-]{7,30}$/.test(phone) ||
+        notes.length > 1000
+    ) {
+        return res.status(400).json({ message: "Provide a valid recipient name, phone number, delivery address, and notes under 1000 characters" });
     }
 
     const quantities = new Map();
@@ -78,6 +87,8 @@ export async function createOrder(req, res) {
                 orderID,
                 email: req.user.email,
                 name: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim() || req.user.email,
+                recipientName,
+                phone,
                 address,
                 total: Number(total.toFixed(2)),
                 items,
