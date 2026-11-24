@@ -288,7 +288,7 @@ export function getAllUsers(req, res) {
     });
 }
 
-export function updateUserByEmail(req, res) {
+export async function updateUserByEmail(req, res) {
     if (!isAdmin(req)) {
         return res.status(403).json({ message: "Forbidden" });
     }
