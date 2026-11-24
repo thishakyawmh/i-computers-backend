@@ -1,4 +1,5 @@
 import { json } from 'express';
+import crypto from 'crypto';
 import User from '../models/User.js';
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -170,68 +171,95 @@ export async function googleLogin(req, res) {
 
 export async function sendOTP(req, res) {
     try {
-        const email = req.params.email;
-        const user = await User.findOne({ email });
-
-        if (!user) {
-            return res.status(404).json({ message: "User Not Found" });
+        const email = String(req.body?.email || req.params.email || '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: 'A valid email address is required' });
         }
 
-        await Otp.deleteMany({
-            email: email
-        });
+        const genericResponse = {
+            message: 'If an account exists for that email, a verification code will be sent.'
+        };
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(200).json(genericResponse);
+        }
 
-        const otpCode = Math.floor(100000 + Math.random() * 900000);
-
+        await Otp.deleteMany({ email });
+        const otpCode = crypto.randomInt(100000, 1000000).toString();
         const otp = new Otp({
-            email: email,
-            otp: otpCode
-        })
-
+            email,
+            otp: otpCode,
+            expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            attempts: 0
+        });
         await otp.save();
 
-        const message = {
-            from: process.env.EMAIL,
-            to: email,
-            subject: "OTP Verification",
-            text: `Your OTP is ${otpCode}`
-        };
+        try {
+            await transporter.sendMail({
+                from: process.env.EMAIL,
+                to: email,
+                subject: 'OTP Verification',
+                text: `Your password reset code is ${otpCode}. It expires in 10 minutes.`
+            });
+        } catch (mailError) {
+            await Otp.deleteMany({ email });
+            console.error('Password reset email delivery failed');
+            return res.status(500).json({ message: 'Unable to send a verification code right now' });
+        }
 
-        transporter.sendMail(message, (error, info) => {
-            if (error) {
-                console.error(error);
-                return res.status(500).json({ message: "Error sending OTP", error: error.message });
-            }
-            res.json({ message: "OTP sent successfully" });
-        });
-
+        return res.status(200).json(genericResponse);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error sending OTP", error: error.message });
+        console.error('Password reset request failed:', error.message);
+        return res.status(500).json({ message: 'Unable to process password reset request' });
     }
 }
 
 export async function validateOTAndUpdatePassword(req, res) {
     try {
-        const { email, otpCode, password } = req.body;
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const otpCode = String(req.body?.otpCode || '').trim();
+        const password = req.body?.password;
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(otpCode)) {
+            return res.status(400).json({ message: 'Invalid email address or verification code' });
+        }
+        if (typeof password !== 'string' || password.length < 12) {
+            return res.status(400).json({ message: 'Password must be at least 12 characters long' });
+        }
+
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(404).json({ message: "User Not Found" });
+            return res.status(400).json({ message: 'Invalid or expired verification code' });
         }
+
         const otp = await Otp.findOne({ email });
-        if (!otp) {
-            return res.status(404).json({ message: "OTP Not Found" });
+        if (!otp || !otp.expiresAt || otp.expiresAt.getTime() <= Date.now()) {
+            await Otp.deleteMany({ email });
+            return res.status(400).json({ message: 'Invalid or expired verification code' });
         }
+
+        if (otp.attempts >= 5) {
+            await Otp.deleteMany({ email });
+            return res.status(429).json({ message: 'Too many incorrect attempts. Request a new code.' });
+        }
+
         if (otp.otp !== otpCode) {
-            return res.status(401).json({ message: "Invalid OTP" });
+            otp.attempts += 1;
+            if (otp.attempts >= 5) {
+                await Otp.deleteMany({ email });
+                return res.status(429).json({ message: 'Too many incorrect attempts. Request a new code.' });
+            }
+            await otp.save();
+            return res.status(400).json({ message: 'Invalid or expired verification code' });
         }
-        user.password = bcrypt.hashSync(password, 10);
+
+        user.password = await bcrypt.hash(password, 12);
         await user.save();
         await Otp.deleteMany({ email });
-        res.json({ message: "Password updated successfully" });
+        return res.status(200).json({ message: 'Password updated successfully' });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error updating password", error: error.message });
+        console.error('Password update failed:', error.message);
+        return res.status(500).json({ message: 'Unable to update password right now' });
     }
 }
 
