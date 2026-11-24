@@ -203,7 +203,7 @@ export async function googleLogin(req, res) {
 
 export async function sendOTP(req, res) {
     try {
-        const email = typeof req.params.email === "string" ? req.params.email.trim().toLowerCase() : "";
+        const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
         if (!email) return res.status(400).json({ message: "Email is required" });
 
         const user = await User.findOne({ email });
