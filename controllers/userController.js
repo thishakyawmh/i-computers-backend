@@ -78,7 +78,7 @@ export async function loginUser(req, res) {
             return res.status(401).json({ message: "Invalid email or password" });
         }
 
-        const isPasswordCorrect = await bcrypt.compare(password, user.password);
+        const isPasswordCorrect = typeof user.password === "string" && await bcrypt.compare(password, user.password);
 
         if (isPasswordCorrect) {
             const sanitizedUser = sanitizeUserImages(user);
@@ -142,6 +142,9 @@ export async function googleLogin(req, res) {
         );
         const { email, given_name, family_name, picture } = googleRes.data;
         let user = await User.findOne({ email: email });
+        if (user?.isBlocked) {
+            return res.status(403).json({ message: "This account is blocked" });
+        }
         if (user) {
             user.profileImage = picture;
             user.image = picture;
@@ -238,7 +241,7 @@ export async function validateOTAndUpdatePassword(req, res) {
         const otpCode = String(req.body.otpCode || "");
         const password = req.body.password;
 
-        if (!email || !/^\\d{6}$/.test(otpCode) || typeof password !== "string" || password.length < 12) {
+        if (!email || !/^\d{6}$/.test(otpCode) || typeof password !== "string" || password.length < 12) {
             return res.status(400).json({ message: "A valid email, six-digit code, and password of at least 12 characters are required" });
         }
 
