@@ -31,6 +31,12 @@ const sanitizeUserImages = (user) => {
     if (userObj.profileImage && invalidPaths.some(path => userObj.profileImage.includes(path))) {
         userObj.profileImage = null;
     }
+
+    // Never expose authentication secrets or internal Mongo metadata in API responses.
+    delete userObj.password;
+    delete userObj.passwordHash;
+    delete userObj.__v;
+
     return userObj;
 };
 
@@ -58,7 +64,7 @@ export async function loginUser(req, res) {
 
         const user = await User.findOne({ email });
         if (!user) {
-            return res.status(404).json({ message: "User Not Found" });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
         const isPasswordCorrect = bcrypt.compareSync(password, user.password);
@@ -85,7 +91,7 @@ export async function loginUser(req, res) {
                 role: user.role
             });
         } else {
-            res.status(401).json({ message: "Password is incorrect" });
+            res.status(401).json({ message: "Invalid email or password" });
         }
     } catch (error) {
         res.status(500).json({ message: "Error logging in", error: error.message });
@@ -121,6 +127,10 @@ export async function googleLogin(req, res) {
         const googleRes = await axios.get(
             `https://www.googleapis.com/oauth2/v3/userinfo?access_token=${token}`
         );
+        if (googleRes.data.email_verified !== true) {
+            return res.status(401).json({ message: "Google account email is not verified" });
+        }
+
         const { email, given_name, family_name, picture } = googleRes.data;
         let user = await User.findOne({ email: email });
         if (user) {
