@@ -1,4 +1,3 @@
-import { json } from 'express';
 import User from '../models/User.js';
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -33,6 +32,7 @@ const sanitizeUserImages = (user) => {
         userObj.profileImage = null;
     }
     delete userObj.password;
+    delete userObj.otp;
     return userObj;
 };
 
@@ -73,7 +73,7 @@ export async function loginUser(req, res) {
             return res.status(400).json({ message: "Email and password are required" });
         }
 
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email }).select("+password");
         if (!user || user.isBlocked) {
             return res.status(401).json({ message: "Invalid email or password" });
         }
