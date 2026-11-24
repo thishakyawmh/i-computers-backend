@@ -1,6 +1,5 @@
 import express from "express";
 import mongoose from "mongoose";
-import jwt from "jsonwebtoken";
 import cors from "cors";
 import dotenv from "dotenv";
 
@@ -8,6 +7,7 @@ import userRouter from "./routes/userRouter.js";
 import productRouter from "./routes/productRouter.js";
 import OrderRouter from "./routes/orderRouter.js";
 import reviewRouter from "./routes/reviewRouter.js";
+import { authenticateToken } from "./middleware/auth.js";
 
 dotenv.config();
 
@@ -46,26 +46,7 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: "1mb" }));
 
-// Public routes may omit Authorization. If a token is supplied, it must be valid.
-app.use((req, res, next) => {
-    const authorizationHeader = req.get("Authorization");
-    if (!authorizationHeader) return next();
-
-    const [scheme, token, ...extra] = authorizationHeader.trim().split(/\s+/);
-    if (scheme !== "Bearer" || !token || extra.length > 0) {
-        return res.status(401).json({ message: "Invalid Authorization header" });
-    }
-
-    try {
-        req.user = jwt.verify(token, JWT_SECRET, {
-            algorithms: ["HS256"],
-            issuer: JWT_ISSUER
-        });
-        return next();
-    } catch {
-        return res.status(401).json({ message: "Invalid or expired token" });
-    }
-});
+app.use(authenticateToken);
 
 app.use("/api/users", userRouter);
 app.use("/api/products", productRouter);
