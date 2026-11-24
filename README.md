@@ -61,3 +61,6 @@ npm run check
 ## Deployment notes
 
 Keep `.env` out of source control. Store the MongoDB URI, JWT secret, and SMTP credentials in your deployment platform's secret manager. Use HTTPS in production and rotate any credentials that have ever been committed to the repository.
+
+
+Password-reset code delivery uses POST rather than GET so email addresses and side effects are not placed in URL paths. Google sign-in requires a verified Google email. Configure `JWT_ISSUER` consistently across token issuance and verification.
